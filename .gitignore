@@ -1,0 +1,14 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.smoke/
+*.spec.bak
+.venv/
+config.local.json
+duanju-smoke-*/
+*-smoke-*/
+diagnose.json
+.pytest_cache/
+wheelhouse/
