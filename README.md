@@ -20,7 +20,6 @@
 | 合并 | 把整部剧的 mp4 无损拼接为一个文件（失败自动回退转码），带进度与取消 |
 | 播放 | 内置播放器（QtMultimedia）：上一集 / 下一集、进度拖动、音量、全屏、键盘快捷键 |
 | 设置 | 保存目录、并发、请求间隔、重试、超时、代理、Cookie、ffmpeg 路径、主题 |
-| 多站源 | 内置短剧聚合（两个域名互为备份），可在设置里添加任意苹果CMS 站点 |
 | 打包 | PyInstaller onedir，双击 exe 运行，可压缩分发给他人 |
 
 ## 环境要求
@@ -96,17 +95,6 @@ powershell -ExecutionPolicy Bypass -File scripts\build.ps1
 | `ffmpeg_path` | 空 | 留空自动探测 |
 | `theme` | dark | `dark` / `light` |
 | `sources` | 短剧聚合 | 站源列表，可在设置页增删 |
-
-## 多站源
-
-内置「短剧聚合」：默认站点的多个备用域名在配置中编码存放（避免品牌词进入仓库，
-「设置 → 站源」里可以看到并修改真实地址）。搜索页可能被 Cloudflare 拦截时，
-程序会自动优先走 JSON 接口，失败再切域名/页面。
-
-在「设置 → 站源」可添加任意**苹果CMS（conch 模板）**站点，只要它满足：
-
-- 有 `/voddetail/{id}.html` 详情页（列出 `/vodplay/{id}-{源}-{集}.html`）
-- 播放页内嵌 `var player_xxx={... "url": "...m3u8" ...}`
 
 ## 开发与验证
 
