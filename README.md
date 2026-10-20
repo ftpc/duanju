@@ -198,7 +198,7 @@ duanju-gui/
 `OSError: Cannot find mpv-1.dll, mpv-2.dll or libmpv-2.dll`、`ModuleNotFoundError: No module named 'mpv'`。
 由于主窗口在导入阶段就加载播放器模块，这类错误会导致**程序完全无法启动**，需先解决：
 1. 确认 `mpv-2.dll` 位于项目根目录（打包版则与 `DuanjuDownloader.exe` 同级），文件名优先使用 `mpv-2.dll`；
-2. 确认已安装 Python 绑定：`python -m pip install python-mpv`（当前 `requirements.txt` 未列入，需手动安装）。
+2. 确认已安装 Python 绑定：`python -m pip install "python-mpv>=1.0.8"`（PowerShell 中引号不可省，否则 `>` 会被当作重定向；该包已在 `requirements.txt` 中，正常安装依赖即会带上）。
 
 **下载失败 / 中途停止**
 ：看任务行的错误列和日志。常见原因：地址过期（重试会自动重新解析）、被 CDN 限流（调大间隔、减少并发）、网络中断（点继续）。
