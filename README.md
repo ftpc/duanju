@@ -31,7 +31,7 @@
   - 或把 `ffmpeg.exe`、`ffprobe.exe` 放到程序目录的 `tools\` 下
   - 或在「设置 → ffmpeg 路径」里手动指定
 - **libmpv（mpv-2.dll）**：内置播放器基于 libmpv，需要 `mpv-2.dll`
-  - 放在项目根目录；打包后放在可执行文件同目录（与 `DuanjuDownloader.exe` 同级）
+  - 放在项目根目录；打包时由 `duanju.spec` 一并打入 `dist\DuanjuDownloader\_internal\`
   - 获取方式：从 [mpv-winbuild-cmake-releases](https://github.com/shinchiro/mpv-winbuild-cmake/releases) 下载
     `mpv-dev-x86_64-*.7z`，解压得到 `libmpv-2.dll` 后**重命名为 `mpv-2.dll`**
   - 许可说明：libmpv 默认 **GPLv2+**；如项目整体需要宽松许可，可改用 `mpv-dev-lgpl` 提供的 LGPL 构建
@@ -71,7 +71,7 @@ powershell -ExecutionPolicy Bypass -File scripts\build.ps1
 
 **mpv-2.dll 同样不随包分发，且不纳入 GitHub 源码仓库**：该单文件约 **115MB**，超过 GitHub
 单文件 **100MB** 的硬限制，无法直接提交。因此打包前**必须手动**把 `mpv-2.dll` 放入项目根目录，
-`duanju.spec` 已配置将它一并打入产物（产物目录下与 exe 同级）。注意：主窗口在导入阶段即加载
+`duanju.spec` 已配置将它一并打入产物（PyInstaller 6 的 onedir 模式下落在 `_internal\` 目录）。注意：主窗口在导入阶段即加载
 播放器模块，**缺少该 DLL 时程序会直接启动失败**（报 `Cannot find mpv-1.dll, mpv-2.dll or libmpv-2.dll`），
 不是仅播放功能不可用。
 
