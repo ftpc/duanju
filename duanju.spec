@@ -5,7 +5,7 @@ from pathlib import Path
 
 ROOT = Path(SPECPATH)
 assets = ROOT / "assets"
-datas = [(str(assets), "assets")] if assets.is_dir() else []
+datas = ([(str(assets), "assets")] if assets.is_dir() else []) + [('mpv-2.dll', '.')]
 icon = assets / "app.ico"
 
 a = Analysis(
@@ -14,8 +14,6 @@ a = Analysis(
     binaries=[],
     datas=datas,
     hiddenimports=[
-        "PySide6.QtMultimedia",
-        "PySide6.QtMultimediaWidgets",
         "PySide6.QtNetwork",
     ],
     hookspath=[],

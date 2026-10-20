@@ -150,6 +150,44 @@ class MacCmsSource:
             )
         return dramas
 
+    def _parse_category_list(self, html: str, base: str) -> list[Drama]:
+        """解析分类列表页（如 /vodshow/51-----------.html），提取封面图。
+
+        目标格式：<a href="/voddetail/{id}.html"><img src="{cover}" /></a>{title}{remark}
+        """
+        dramas: list[Drama] = []
+        seen: set[str] = set()
+        logger.info("解析分类列表页，base=%s", base)
+        for match in _VOD_LIST_ITEM_RE.finditer(html):
+            drama_id = match.group(1).strip()
+            cover = match.group(2).strip()
+            title = re.sub(r"\s+", " ", (match.group(3) or "").strip())
+            remark = (match.group(4) or "").strip()
+            if not drama_id or not title or drama_id in seen:
+                continue
+            seen.add(drama_id)
+            # 处理封面 URL
+            if cover.startswith("//"):
+                cover = "https:" + cover
+            elif cover.startswith("/") and base:
+                cover = urljoin(base + "/", cover.lstrip("/"))
+            # 构造状态文本
+            status = remark or f"全{0}集"
+            logger.debug("解析到：id=%s, title=%s, cover=%s, status=%s", drama_id, title[:30], cover[:60], status[:20])
+            dramas.append(
+                Drama(
+                    source_key=self.key,
+                    source_name=self.name,
+                    drama_id=drama_id,
+                    title=title,
+                    cover=cover,
+                    total=int(remark.replace("全", "").replace("集", "")) if "全" in remark and remark.isdigit() else 0,
+                    description=status,
+                )
+            )
+        logger.info("分类列表解析完成，共 %d 部剧", len(dramas))
+        return dramas
+
     # ---------- 详情 / 剧集 ----------
     def detail(self, client: HttpClient, drama: Drama) -> list[Episode]:
         html, base = self._get_html(client, f"/voddetail/{drama.drama_id}.html")

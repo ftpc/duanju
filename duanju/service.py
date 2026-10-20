@@ -206,12 +206,13 @@ class Service:
                 return job.file
         return ""
 
-    # ---------- 合并整部 ----------
+    # ---------- 合并整部（支持分段） ----------
     def merge_drama(
         self,
         drama_key: str,
         on_progress: ProgressCallback,
         cancel_event: threading.Event,
+        parts: int = 1,
     ) -> dict:
         drama = self.drama(drama_key)
         if drama is None:
@@ -222,21 +223,59 @@ class Service:
         files = [job.file for job in jobs if Path(job.file).is_file()]
         if len(files) != len(jobs):
             raise ParseError("部分分集文件缺失，请先在下载页重新下载")
+        
         episodes = [job.episode for job in jobs]
         expected = list(range(min(episodes), max(episodes) + 1))
         missing = [number for number in expected if number not in set(episodes)]
         if missing:
             logger.warning("合并存在缺集：%s", missing[:12])
+            
         title = sanitize_filename(drama.title)
-        output = ensure_dir(self.config.download_path() / title) / f"{title}_全集.mp4"
-        self._emit_log(f"开始合并《{drama.title}》共 {len(files)} 集 → {output.name}")
-        merge_episodes(self.ffmpeg, files, output, on_progress, cancel_event)
-        size = output.stat().st_size if output.is_file() else 0
-        item = self.db.add_merged(drama, str(output), len(files), size)
-        self._emit_log(f"合并完成：{output.name}（{size / 1024 / 1024:.1f} MB）")
+        out_dir = ensure_dir(self.config.download_path() / title)
+        
+        total_files = len(files)
+        chunk_size = total_files // parts
+        remainder = total_files % parts
+        
+        current_idx = 0
+        merged_items = []
+        self._emit_log(f"开始合并《{drama.title}》共 {total_files} 集，分为 {parts} 段")
+
+        for i in range(parts):
+            current_chunk_size = chunk_size + (1 if i < remainder else 0)
+            if current_chunk_size == 0:
+                continue
+                
+            chunk_files = files[current_idx : current_idx + current_chunk_size]
+            current_idx += current_chunk_size
+            
+            suffix = f"_第{i+1}部分" if parts > 1 else ""
+            output = out_dir / f"{title}_全集{suffix}.mp4"
+            
+            start_ratio = i / parts
+            end_ratio = (i + 1) / parts
+            
+            def chunk_progress(ratio, downloaded, speed):
+                if ratio is not None:
+                    mapped_ratio = start_ratio + (ratio * (end_ratio - start_ratio))
+                    on_progress(mapped_ratio, downloaded, speed)
+                else:
+                    on_progress(ratio, downloaded, speed)
+
+            self._emit_log(f"正在合并第 {i+1} 段（{len(chunk_files)} 集） → {output.name}")
+            merge_episodes(self.ffmpeg, chunk_files, output, chunk_progress, cancel_event)
+            
+            size = output.stat().st_size if output.is_file() else 0
+            item = self.db.add_merged(drama, str(output), len(chunk_files), size)
+            merged_items.append(item)
+
+        self._emit_log(f"合并完成，共生成 {len(merged_items)} 个文件")
+        
+        final_item = merged_items[-1] if merged_items else {}
         if missing:
-            item["warning"] = f"缺少 {len(missing)} 集"
-        return item
+            final_item["warning"] = f"缺少 {len(missing)} 集"
+            
+        return final_item
 
     # ---------- 设置 ----------
     def save_settings(self, values: dict) -> None:
@@ -279,6 +318,25 @@ class Service:
 
     def probe_source(self, url: str) -> tuple[bool, str]:
         return probe_site(self.client, url)
+
+    def retry_search_with_challenge(self, query: str, cookies: list[dict], user_agent: str) -> list[Drama]:
+        from .errors import BlockedError, ParseError
+
+        try:
+            self.client.apply_challenge_result(cookies, user_agent)
+            result = self.search("duanju", query)
+            self.client.clear_challenge_result()
+            self._emit_log(f"验证通过，搜索《{query}》成功，找到 {len(result)} 部剧")
+            return result
+        except BlockedError as exc:
+            self.client.clear_challenge_result()
+            raise ParseError(f"验证未通过或已过期：{exc}") from exc
+        except ParseError:
+            raise
+        except Exception as exc:
+            self.client.clear_challenge_result()
+            logger.exception("验证重试搜索失败")
+            raise ParseError(f"搜索失败：{exc}") from exc
 
     def ffmpeg_status(self) -> str:
         if not self.ffmpeg.available:

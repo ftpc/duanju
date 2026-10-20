@@ -222,6 +222,18 @@ def _diagnose() -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
+    # 任务1：暴力验证日志能否写入
+    import os as _os
+    _log_dir = r"C:\DuanjuLogs"
+    try:
+        _os.makedirs(_log_dir, exist_ok=True)
+        with open(_os.path.join(_log_dir, "startup.txt"), "w", encoding="utf-8") as _f:
+            _f.write(f"程序启动 {__import__('datetime').datetime.now()}\n")
+            _f.write(f"Python: {sys.version}\n")
+            _f.write(f"PySide6: {__import__('PySide6').__version__}\n")
+    except Exception as _e:
+        pass  # 即使写日志失败也不影响启动
+
     args = _parse_args(argv)
     if args.version:
         print(f"{APP_TITLE} v{VERSION}")
@@ -312,4 +324,18 @@ def main(argv: list[str] | None = None) -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    import traceback as _traceback
+    try:
+        raise SystemExit(main())
+    except Exception as exc:  # noqa: BLE001 - 终极兜底，确保日志能被写入
+        import logging
+        import sys
+        # 尝试使用已配置的 logger
+        _logger = logging.getLogger(__name__)
+        if _logger.handlers:
+            _logger.critical("Unhandled exception", exc_info=True)
+        else:
+            # 日志系统未初始化，输出到 stderr
+            print(f"FATAL: {exc}", file=sys.stderr)
+            _traceback.print_exc(file=sys.stderr)
+        raise

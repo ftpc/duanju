@@ -12,3 +12,4 @@ duanju-smoke-*/
 diagnose.json
 .pytest_cache/
 wheelhouse/
+mpv-2.dll

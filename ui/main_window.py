@@ -24,7 +24,7 @@ from duanju.util import open_in_explorer
 from duanju.version import APP_TITLE, VERSION
 from ui.downloads_page import DownloadsPage
 from ui.library_page import LibraryPage
-from ui.player_window import MULTIMEDIA_AVAILABLE, PlayerWindow
+from ui.player_window import PlayerWindow
 from ui.search_page import SearchPage
 from ui.settings_page import SettingsPage
 from ui.theme import stylesheet
@@ -93,9 +93,13 @@ class MainWindow(QMainWindow):
 
         self.nav.currentRowChanged.connect(self._switch_page)
         self.search_page.view_downloads.connect(lambda: self.nav.setCurrentRow(1))
-        self.downloads_page.play_file.connect(self._play_file)
-        self.library_page.play_file.connect(self._play_file)
+        
+        # 🎯 核心：连接本地播放和在线播放的信号
+        self.downloads_page.play_file.connect(lambda p: self._play_playlist([(Path(p).name, p)], 0))
+        self.library_page.play_playlist.connect(self._play_playlist)
+        
         self.settings_page.settings_changed.connect(self._on_settings_changed)
+        self.search_page.challenge_result_received.connect(self._on_challenge_result)
         self.bridge.log_message.connect(self.log_panel.append_line)
         self.bridge.jobs_changed.connect(self._update_stats)
 
@@ -112,6 +116,7 @@ class MainWindow(QMainWindow):
         self.addDockWidget(Qt.BottomDockWidgetArea, dock)
         self.log_dock = dock
         self.resizeDocks([dock], [200], Qt.Vertical)
+        dock.hide() # 🎯 启动时隐藏日志
 
     def _build_menu(self) -> None:
         menu = self.menuBar()
@@ -157,25 +162,24 @@ class MainWindow(QMainWindow):
         elif index == 3:
             self.settings_page.reload()
 
-    def _play_file(self, path: str) -> None:
-        source = Path(str(path))
-        if not source.is_file():
+    def _play_playlist(self, playlist: list[tuple[str, str]], start_index: int = 0) -> None:
+        """统一处理播放列表（包括本地连播和在线连播）。"""
+        if not playlist:
+            return
+        
+        # 验证起始文件是否存在
+        source = Path(playlist[start_index][1])
+        if not source.is_file() and not playlist[start_index][1].startswith("http"):
             QMessageBox.warning(self, "播放", f"文件不存在：{source}")
             return
-        if not MULTIMEDIA_AVAILABLE:
-            QMessageBox.warning(
-                self,
-                "播放器",
-                "当前环境缺少 QtMultimedia（需要 PySide6-Addons），无法使用内置播放器。\n"
-                "可以用系统播放器打开文件。",
-            )
-            return
+        
         try:
             window = PlayerWindow(
-                [(source.name, str(source))],
+                playlist=playlist,
+                index=start_index,
                 volume=self.config.volume,
             )
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             QMessageBox.warning(self, "播放器", f"无法打开播放器：{exc}")
             return
         window.setAttribute(Qt.WA_DeleteOnClose, True)
@@ -206,6 +210,29 @@ class MainWindow(QMainWindow):
             app.setStyleSheet(stylesheet(self.config.theme))
         self.search_page.refresh_sources()
 
+    def _on_challenge_result(self, cookies: list[dict], user_agent: str) -> None:
+        query = self.search_page.query_edit.text().strip()
+        source_key = self.search_page.source_combo.currentData()
+        if not query or not source_key:
+            return
+
+        def do_retry() -> None:
+            try:
+                result = self.service.retry_search_with_challenge(query, cookies, user_agent)
+                self.search_page._challenge_pending = False
+                self.search_page._on_search_ok(result)
+            except Exception as exc:
+                self.search_page._challenge_pending = False
+                from PySide6.QtCore import QTimer
+                error_msg = f"{exc}"
+                if "人机验证" in error_msg or "Cloudflare" in error_msg:
+                    error_msg += "\n\n可能原因：\n1. UA 与浏览器不一致\n2. Cookie 已过期\n3. IP 被限制"
+                QTimer.singleShot(0, lambda: QMessageBox.critical(
+                    self, "验证失败", f"重试失败：{error_msg}\n\n请确保 UA 与浏览器一致，或稍后重试。"
+                ))
+
+        self.bridge.run(do_retry)
+
     def _about(self) -> None:
         QMessageBox.about(
             self,
@@ -215,11 +242,10 @@ class MainWindow(QMainWindow):
             "仅供个人学习分镜、离线研究使用；请勿传播、二创或商用。",
         )
 
-    # ---------- 退出 ----------
-    def closeEvent(self, event) -> None:  # noqa: N802, ANN001
+    def closeEvent(self, event) -> None:
         try:
             active = self.service.active_jobs()
-        except Exception:  # noqa: BLE001
+        except Exception:
             active = 0
         if active:
             reply = QMessageBox.question(
@@ -232,11 +258,10 @@ class MainWindow(QMainWindow):
                 return
         try:
             self.service.shutdown()
-        except Exception:  # noqa: BLE001
+        except Exception:
             logger.exception("关闭服务失败")
         event.accept()
 
-    # ---------- 演示 / 截图 ----------
     def load_demo(self) -> None:
         self._demo = True
         self.search_page.load_demo()
@@ -250,8 +275,4 @@ class MainWindow(QMainWindow):
                 {"state": "failed"},
             ]
         )
-        self.log_panel.append_line("14:30:01 INFO  demo: 服务已启动")
-        self.log_panel.append_line("14:30:02 INFO  demo: 找到《示例短剧 A》共 76 集")
-        self.log_panel.append_line("14:30:05 INFO  demo: 第1集 下载完成")
-        self.log_panel.append_line("14:30:07 WARNING demo: 第6集 失败：站点返回 HTTP 403（人机验证）")
         self.statusBar().showMessage("演示模式")

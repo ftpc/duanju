@@ -61,10 +61,9 @@ def choose_data_dir() -> tuple[Path, str]:
             warning = ""
             if candidate != preferred:
                 warning = (
-                    f"无法写入配置目录 {preferred}，已改用 {candidate}。\n"
-                    "常见原因：程序位于沙箱/低完整性目录（例如 DSH 工作区）中运行。\n"
-                    "建议把程序解压到桌面或普通文件夹后再运行。"
-                )
+                    f"未启用管理员身份，无法写入配置目录 {preferred}，已改用 {candidate}。\n"
+                    "配置已自动保存在 LocalLow 目录中，不影响软件正常使用。\n"
+                                     )
             return candidate, warning
     fallback = Path(tempfile.gettempdir()) / APP_NAME
     if _probe_writable(fallback):

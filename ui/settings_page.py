@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+import shutil
+
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QComboBox,
@@ -149,6 +152,7 @@ class SettingsPage(QWidget):
         media_form.addRow("状态", status_row)
         left.addWidget(media)
 
+        # 外观
         appearance = QGroupBox("外观")
         appearance_form = QFormLayout(appearance)
         self.theme_combo = QComboBox()
@@ -156,11 +160,53 @@ class SettingsPage(QWidget):
         self.theme_combo.addItem("浅色", "light")
         appearance_form.addRow("主题", self.theme_combo)
         left.addWidget(appearance)
+
+        # 图片缓存管理
+        cache_group = QGroupBox("图片缓存")
+        cache_layout = QVBoxLayout()
+        
+        # 显示体积的 Label
+        self.cache_info_label = QLabel("缓存目录: C:\\DuanjuLogs\\cache\\images\\")
+        self.cache_info_label.setWordWrap(True)
+        cache_layout.addWidget(self.cache_info_label)
+        
+        self.cache_size_label = QLabel("当前缓存大小: 计算中...")
+        self.cache_size_label.setStyleSheet("color: #ff5f57; font-weight: bold;")
+        cache_layout.addWidget(self.cache_size_label)
+
+        self.clear_cache_btn = QPushButton("清理图片缓存")
+        self.clear_cache_btn.clicked.connect(self._clear_image_cache)
+        cache_layout.addWidget(self.clear_cache_btn)
+
+        cache_group.setLayout(cache_layout)
+        left.addWidget(cache_group)
+
         left.addStretch(1)
         body.addLayout(left, 1)
 
         right = QVBoxLayout()
+        
+        # 关于
+        about = QGroupBox("关于")
+        about_layout = QVBoxLayout(about)
+        about_layout.addWidget(QLabel(f"短剧下载器 v{VERSION}"))
+        about_layout.addWidget(
+            small_label("仅供个人学习分镜、离线研究使用；请勿传播、二创或商用。")
+        )
+        about_buttons = QHBoxLayout()
+        open_config = QPushButton("打开配置目录")
+        open_config.clicked.connect(self._open_config)
+        open_logs = QPushButton("打开日志目录")
+        open_logs.clicked.connect(self._open_logs)
+        about_buttons.addWidget(open_config)
+        about_buttons.addWidget(open_logs)
+        about_buttons.addStretch(1)
+        about_layout.addLayout(about_buttons)
+        right.addWidget(about)
+
+        # 站源（隐藏）
         sources_box = QGroupBox("站源（多站源）")
+        sources_box.setVisible(False)
         sources_layout = QVBoxLayout(sources_box)
         self.sources_table = QTableWidget(0, 2)
         self.sources_table.setHorizontalHeaderLabels(["名称", "地址"])
@@ -189,22 +235,7 @@ class SettingsPage(QWidget):
         )
         right.addWidget(sources_box, 1)
 
-        about = QGroupBox("关于")
-        about_layout = QVBoxLayout(about)
-        about_layout.addWidget(QLabel(f"短剧下载器 v{VERSION}"))
-        about_layout.addWidget(
-            small_label("仅供个人学习分镜、离线研究使用；请勿传播、二创或商用。")
-        )
-        about_buttons = QHBoxLayout()
-        open_config = QPushButton("打开配置目录")
-        open_config.clicked.connect(self._open_config)
-        open_logs = QPushButton("打开日志目录")
-        open_logs.clicked.connect(self._open_logs)
-        about_buttons.addWidget(open_config)
-        about_buttons.addWidget(open_logs)
-        about_buttons.addStretch(1)
-        about_layout.addLayout(about_buttons)
-        right.addWidget(about)
+        right.addStretch(1)
         body.addLayout(right, 1)
         root.addLayout(body, 1)
 
@@ -237,6 +268,36 @@ class SettingsPage(QWidget):
         self.ffmpeg_status.setText(self.service.ffmpeg_status())
         self._fill_sources()
         self.status.setText("")
+        
+        # 刷新缓存大小
+        self._update_cache_size()
+
+    def _update_cache_size(self) -> None:
+        """计算图片缓存目录的体积。"""
+        cache_dir = Path(r"C:\DuanjuLogs\cache\images")
+        if not cache_dir.exists():
+            self.cache_size_label.setText("当前缓存大小: 0 B (目录不存在)")
+            return
+            
+        total_size = 0
+        file_count = 0
+        try:
+            for file in cache_dir.glob("*"):
+                if file.is_file():
+                    total_size += file.stat().st_size
+                    file_count += 1
+                    
+            # 格式化大小
+            if total_size < 1024:
+                size_str = f"{total_size} B"
+            elif total_size < 1024 * 1024:
+                size_str = f"{total_size / 1024:.1f} KB"
+            else:
+                size_str = f"{total_size / 1024 / 1024:.2f} MB"
+                
+            self.cache_size_label.setText(f"当前缓存大小: {size_str} ({file_count} 个文件)")
+        except Exception as e:
+            self.cache_size_label.setText(f"当前缓存大小: 计算失败 ({e})")
 
     def _fill_sources(self) -> None:
         self.sources_table.setRowCount(0)
@@ -352,3 +413,43 @@ class SettingsPage(QWidget):
         from duanju.util import open_in_explorer
 
         open_in_explorer(self.service.config.log_dir)
+
+    def _clear_image_cache(self) -> None:
+        """清理图片缓存目录。"""
+        cache_dir = Path(r"C:\DuanjuLogs\cache\images")
+        if not cache_dir.exists():
+            QMessageBox.information(self, "清理缓存", "缓存目录不存在")
+            return
+
+        # 确认对话框
+        reply = QMessageBox.question(
+            self,
+            "确认清理",
+            f"确定要清理图片缓存吗？\n\n缓存目录：{cache_dir}\n这将删除所有已下载的图片文件。",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No,
+        )
+
+        if reply != QMessageBox.Yes:
+            return
+
+        try:
+            # 删除所有图片文件
+            count = 0
+            for file in cache_dir.glob("*"):
+                if file.is_file():
+                    file.unlink()
+                    count += 1
+                elif file.is_dir():
+                    shutil.rmtree(file)
+                    count += 1
+
+            QMessageBox.information(self, "清理完成", f"已清理 {count} 个缓存文件")
+            print(f"[SETTINGS] 清理图片缓存完成，共删除 {count} 个文件")
+            
+            # 清理完毕后刷新体积显示
+            self._update_cache_size()
+            
+        except Exception as exc:
+            QMessageBox.critical(self, "清理失败", f"清理缓存时出错：{exc}")
+            print(f"[SETTINGS] 清理图片缓存失败: {exc}")

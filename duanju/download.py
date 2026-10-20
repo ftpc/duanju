@@ -10,6 +10,7 @@ import re
 import subprocess
 import threading
 import time
+import yt_dlp
 from collections import deque
 from collections.abc import Callable
 from pathlib import Path
@@ -263,7 +264,6 @@ class FFmpeg:
                 raw = lines.get(timeout=0.2)
             except queue.Empty:
                 if proc.poll() is not None:
-                    # 进程已退出：给读取线程最多 1 秒把剩余输出排空
                     try:
                         raw = lines.get(timeout=1.0)
                     except queue.Empty:
@@ -318,6 +318,67 @@ class FFmpeg:
             except Exception as exc:  # noqa: BLE001 - 时长只影响进度显示
                 logger.debug("获取播放列表时长失败：%s", exc)
                 duration = 0.0
+
+        # =========================================================
+        # 🚀 新增：优先使用 yt-dlp 进行多线程分片下载
+        # =========================================================
+        try:
+            # 组装 yt-dlp 需要的请求头
+            headers = plan.headers.copy()
+            if plan.referer:
+                headers["Referer"] = plan.referer
+                
+            def ytdlp_progress_hook(d):
+                if cancel_event.is_set():
+                    raise Exception("用户取消下载")
+                if d["status"] == "downloading":
+                    downloaded = d.get("downloaded_bytes", 0)
+                    total = d.get("total_bytes") or d.get("total_bytes_estimate", 0)
+                    ratio = (downloaded / total) if total > 0 else None
+                    speed = d.get("speed") or 0.0
+                    on_progress(ratio, downloaded, speed)
+                elif d["status"] == "finished":
+                    on_progress(1.0, d.get("total_bytes", 0), 0.0)
+
+            ydl_opts = {
+                "format": "bestvideo+bestaudio/best",
+                "outtmpl": str(part),
+                "concurrent_fragment_downloads": 8, # 👈 开启 8 线程分片并发
+                "quiet": True,
+                "no_warnings": True,
+                "http_headers": headers,
+                "progress_hooks": [ytdlp_progress_hook],
+            }
+
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                ydl.download([plan.url])
+
+            if cancel_event.is_set():
+                raise CancelledError("任务已暂停/取消")
+
+            if not part.exists() or part.stat().st_size <= 1024:
+                raise DownloadError("yt-dlp 没有产出有效文件")
+
+            # 校验并重命名
+            if self.probe_binary:
+                info = self.probe(part)
+                if info and info.get("duration", 0) <= 0 and not info.get("video"):
+                    raise DownloadError("yt-dlp 文件校验失败：无法识别音视频流")
+            
+            os.replace(part, target)
+            logger.info("yt-dlp 下载成功: %s", target)
+            return  # 成功则直接返回，不走下面的 ffmpeg 逻辑
+
+        except CancelledError:
+            self._safe_unlink(part)
+            raise
+        except Exception as exc:
+            logger.warning("yt-dlp 下载失败或不受支持，自动回退到 ffmpeg 顺序下载。原因: %s", exc)
+            # 清理可能残留的半截文件
+            self._safe_unlink(part)
+        # =========================================================
+        # 如果 yt-dlp 失败，继续往下走原本的 ffmpeg 逻辑
+        # =========================================================
 
         header_text = "".join(
             f"{key}: {value}\r\n"

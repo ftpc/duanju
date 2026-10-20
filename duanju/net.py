@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import random
 import threading
 import time
@@ -16,9 +17,14 @@ from .config import Config
 from .errors import BlockedError, NetworkError, NotFoundError
 from .version import APP_NAME, VERSION
 
+logger = logging.getLogger(__name__)
+
+# 注意：此 UA 与 ui/cf_challenge_dialog.py 中的 _STABLE_USER_AGENT 保持一致。
+# Cloudflare 的 cf_clearance 与 UA 绑定，浏览器和 requests 必须使用相同 UA 字符串，
+# 否则已验证的 cookie 会对后续请求失效。
 USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-    "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
 )
 
 
@@ -27,6 +33,10 @@ class HttpClient:
         self._config = config
         self._lock = threading.Lock()
         self._last_request: dict[str, float] = {}
+        # Challenge 验证结果（用户手动输入的 Cookie 和 UA）
+        # Cloudflare 的 cf_clearance 与 UA 绑定，浏览器与 requests 必须使用相同 UA
+        self._override_cookie: str = ""
+        self._override_user_agent: str = ""
         self._session = self._build_session()
 
     # ---------- 生命周期 ----------
@@ -61,6 +71,8 @@ class HttpClient:
         with self._lock:
             old = self._session
             self._last_request.clear()
+            self._override_cookie = ""
+            self._override_user_agent = ""
             self._session = self._build_session()
         try:
             old.close()
@@ -113,15 +125,25 @@ class HttpClient:
         request_headers: dict[str, str] = {}
         if referer:
             request_headers["Referer"] = referer
-        cookie_value = cookie if cookie is not None else self._config.cookie
+        # 优先使用 challenge 验证结果中的 Cookie 和 UA
+        cookie_value = cookie or self._override_cookie or self._config.cookie
         if cookie_value:
             request_headers["Cookie"] = cookie_value
         if headers:
             request_headers.update(headers)
+        # 优先使用 challenge 验证结果中的 UA
+        ua = self._override_user_agent or request_headers.get("User-Agent", USER_AGENT)
+
+        logger.info("=== 正在发送请求 ===")
+        logger.info("目标URL: %s", url)
+        logger.info("使用的 Cookie: %s", cookie_value or "(无)")
+        logger.info("使用的 UA: %s", ua)
+        logger.info("====================")
+
         try:
             response = self._session.get(
                 url,
-                headers=request_headers,
+                headers={**request_headers, "User-Agent": ua},
                 timeout=(10, timeout if timeout is not None else self._config.timeout),
                 proxies=self._proxies(),
                 allow_redirects=allow_redirects,
@@ -133,7 +155,31 @@ class HttpClient:
         except requests.exceptions.RequestException as exc:
             raise NetworkError(f"网络请求失败：{exc}") from exc
         self._raise_for_status(response)
+        # 请求成功后清除 challenge 状态（避免后续请求一直使用旧验证）
+        if response.status_code < 400:
+            self.clear_challenge_result()
         return response
+
+    def apply_challenge_result(self, cookies: list[dict[str, str]], user_agent: str) -> None:
+        """应用人机验证结果：将 Cookie 列表拼成字符串，设置 UA。
+
+        调用时机：用户完成 Cloudflare 验证后，在搜索重试前调用。
+        """
+        with self._lock:
+            parts = [f"{c['name']}={c['value']}" for c in cookies if c.get("name") and c.get("value")]
+            self._override_cookie = "; ".join(parts)
+            self._override_user_agent = user_agent
+        logger.debug("已应用 challenge 结果，cookie数=%d", len(cookies))
+
+    def clear_challenge_result(self) -> None:
+        """清除人机验证结果。
+
+        调用时机：请求成功一次后（验证已过期或不需要再保留），或用户手动修改设置中的 Cookie。
+        """
+        with self._lock:
+            self._override_cookie = ""
+            self._override_user_agent = ""
+        logger.debug("已清除 challenge 结果")
 
     @staticmethod
     def _raise_for_status(response: requests.Response) -> None:
