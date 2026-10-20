@@ -1,12 +1,22 @@
 # -*- mode: python ; coding: utf-8 -*-
 """PyInstaller 打包配置：onedir，双击 exe 运行。"""
 
+import sys
 from pathlib import Path
 
 ROOT = Path(SPECPATH)
 assets = ROOT / "assets"
 datas = ([(str(assets), "assets")] if assets.is_dir() else []) + [('mpv-2.dll', '.')]
 icon = assets / "app.ico"
+
+# Version resource: single source is duanju/version.py; written into the exe properties
+sys.path.insert(0, str(ROOT))
+sys.path.insert(0, str(ROOT / "scripts"))
+from duanju.version import VERSION as _version  # noqa: E402
+from make_version_info import write_version_file  # noqa: E402
+
+version_file = write_version_file(ROOT / "build" / "version_info.txt", _version)
+print(f"[duanju.spec] build version: {_version}")
 
 a = Analysis(
     ["app.py"],
@@ -50,6 +60,7 @@ exe = EXE(
     upx=False,
     console=False,
     icon=str(icon) if icon.is_file() else None,
+    version=str(version_file),
 )
 
 coll = COLLECT(

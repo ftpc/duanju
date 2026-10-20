@@ -64,7 +64,8 @@ powershell -ExecutionPolicy Bypass -File scripts\build.ps1
 ```
 
 产物在 `dist\DuanjuDownloader\`（双击 `DuanjuDownloader.exe` 运行）与
-`dist\DuanjuDownloader-0.2.0-win64.zip`（约 56 MB，可直接分发）。
+`dist\DuanjuDownloader-<version>-win64.zip`（约 96 MB，可直接分发）。
+脚本自动从 `duanju/version.py` 读取版本号命名 zip，无需手动改名。
 **ffmpeg 不随包分发**（体积 140MB+ 且涉及 GPL 许可）：对方需要把 ffmpeg 加入 PATH，
 或在设置里指定路径，或把 `ffmpeg.exe` / `ffprobe.exe` 放进程序目录的 `tools\`。
 
@@ -73,6 +74,42 @@ powershell -ExecutionPolicy Bypass -File scripts\build.ps1
 `duanju.spec` 已配置将它一并打入产物（产物目录下与 exe 同级）。注意：主窗口在导入阶段即加载
 播放器模块，**缺少该 DLL 时程序会直接启动失败**（报 `Cannot find mpv-1.dll, mpv-2.dll or libmpv-2.dll`），
 不是仅播放功能不可用。
+
+## 版本与发版
+
+版本号只有一处定义：`duanju/version.py` 的 `VERSION`，其余环节全部从它派生。
+
+| 环节 | 表现 |
+| --- | --- |
+| 运行时自报 | `python app.py --version` 与 `DuanjuDownloader.exe --version` 输出同一个值 |
+| exe 属性 | `duanju.spec` 调用 `scripts/make_version_info.py` 生成版本资源，右键 exe → 属性 → 详细信息可见文件版本 / 产品版本 |
+| 分发包 | `scripts/build.ps1` 生成 `dist\DuanjuDownloader-<version>-win64.zip` |
+| 源码标签 | `git tag -a v<version>`，标签名与 `VERSION` 同名 |
+
+发版四步：
+
+```powershell
+# 1) 改版本号并提交（编辑 duanju/version.py 的 VERSION）
+git add duanju/version.py
+git commit -m "chore: bump version to x.y.z"
+
+# 2) 打同名注释标签
+git tag -a vx.y.z -m "vx.y.z: 一句话说明"
+
+# 3) 打包（自动产出同名 zip，并用 exe --version 交叉校验）
+powershell -ExecutionPolicy Bypass -File scripts\build.ps1
+
+# 4) 推送分支与标签
+git push origin main
+git push origin vx.y.z
+```
+
+版本沿革：
+
+| 标签 | 内容 |
+| --- | --- |
+| `v0.1.0` | 最早的干净源码（QtMultimedia 播放器）；此前被误标为 v0.2.0，现回退重新编号 |
+| `v0.2.0` | 播放引擎换为 libmpv，补齐 `mpv-2.dll` 依赖文档，并完成版本号工程化 |
 
 ## 使用流程
 
@@ -172,7 +209,7 @@ duanju-gui/
 │  ├─ main_window.py search_page.py downloads_page.py
 │  ├─ library_page.py settings_page.py player_window.py
 ├─ tests/                 # unittest 单元测试
-├─ scripts/               # 冒烟、图标、打包、验证
+├─ scripts/               # 冒烟、图标、打包（build.ps1）、版本资源（make_version_info.py）、验证
 ├─ assets/                # 图标与截图
 ├─ duanju.spec           # PyInstaller 配置
 └─ requirements*.txt
