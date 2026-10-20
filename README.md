@@ -18,7 +18,7 @@
 | 下载 | 队列 + 并发（1–6）、实时进度 / 速度 / 大小、暂停 / 继续 / 重试 / 删除、启动恢复 |
 | 剧库 | 按剧查看已完成分集、播放、打开所在目录、删除分集 |
 | 合并 | 把整部剧的 mp4 无损拼接为一个文件（失败自动回退转码），带进度与取消 |
-| 播放 | 内置播放器（QtMultimedia）：上一集 / 下一集、进度拖动、音量、全屏、键盘快捷键 |
+| 播放 | 内置播放器（libmpv 强兼容解码引擎）：上一集 / 下一集、进度拖动、音量、全屏、键盘快捷键 |
 | 设置 | 保存目录、并发、请求间隔、重试、超时、代理、Cookie、ffmpeg 路径、主题 |
 | 打包 | PyInstaller onedir，双击 exe 运行，可压缩分发给他人 |
 
@@ -30,6 +30,12 @@
   - 已在 PATH 里：自动使用
   - 或把 `ffmpeg.exe`、`ffprobe.exe` 放到程序目录的 `tools\` 下
   - 或在「设置 → ffmpeg 路径」里手动指定
+- **libmpv（mpv-2.dll）**：内置播放器基于 libmpv，需要 `mpv-2.dll`
+  - 放在项目根目录；打包后放在可执行文件同目录（与 `DuanjuDownloader.exe` 同级）
+  - 获取方式：从 [mpv-winbuild-cmake-releases](https://github.com/shinchiro/mpv-winbuild-cmake/releases) 下载
+    `mpv-dev-x86_64-*.7z`，解压得到 `libmpv-2.dll` 后**重命名为 `mpv-2.dll`**
+  - 许可说明：libmpv 默认 **GPLv2+**；如项目整体需要宽松许可，可改用 `mpv-dev-lgpl` 提供的 LGPL 构建
+  - 该 DLL 不随仓库分发（原因见「打包分发」）
 
 ## 安装与运行
 
@@ -61,6 +67,12 @@ powershell -ExecutionPolicy Bypass -File scripts\build.ps1
 `dist\DuanjuDownloader-0.2.0-win64.zip`（约 56 MB，可直接分发）。
 **ffmpeg 不随包分发**（体积 140MB+ 且涉及 GPL 许可）：对方需要把 ffmpeg 加入 PATH，
 或在设置里指定路径，或把 `ffmpeg.exe` / `ffprobe.exe` 放进程序目录的 `tools\`。
+
+**mpv-2.dll 同样不随包分发，且不纳入 GitHub 源码仓库**：该单文件约 **115MB**，超过 GitHub
+单文件 **100MB** 的硬限制，无法直接提交。因此打包前**必须手动**把 `mpv-2.dll` 放入项目根目录，
+`duanju.spec` 已配置将它一并打入产物（产物目录下与 exe 同级）。注意：主窗口在导入阶段即加载
+播放器模块，**缺少该 DLL 时程序会直接启动失败**（报 `Cannot find mpv-1.dll, mpv-2.dll or libmpv-2.dll`），
+不是仅播放功能不可用。
 
 ## 使用流程
 
@@ -181,6 +193,13 @@ duanju-gui/
 **提示「未找到 ffmpeg」**
 ：安装 ffmpeg 并加入 PATH，或放到程序目录 `tools\`，或在设置里选择 `ffmpeg.exe`。
 
+**启动即报 libmpv / mpv-2.dll 错误**
+：典型现象是启动日志里出现 `mpv-2.dll` **DLL 预加载失败**，或直接抛
+`OSError: Cannot find mpv-1.dll, mpv-2.dll or libmpv-2.dll`、`ModuleNotFoundError: No module named 'mpv'`。
+由于主窗口在导入阶段就加载播放器模块，这类错误会导致**程序完全无法启动**，需先解决：
+1. 确认 `mpv-2.dll` 位于项目根目录（打包版则与 `DuanjuDownloader.exe` 同级），文件名优先使用 `mpv-2.dll`；
+2. 确认已安装 Python 绑定：`python -m pip install python-mpv`（当前 `requirements.txt` 未列入，需手动安装）。
+
 **下载失败 / 中途停止**
 ：看任务行的错误列和日志。常见原因：地址过期（重试会自动重新解析）、被 CDN 限流（调大间隔、减少并发）、网络中断（点继续）。
 
@@ -196,7 +215,7 @@ duanju-gui/
 ## 已知限制
 
 - 仅支持苹果CMS 类站点（`player_xxx` + m3u8/mp4）；不处理 DRM、付费、直播。
-- 内置播放器依赖系统解码器（Windows Media Foundation），H.264/AAC 的 mp4 正常；冷门编码可能无法播放，可改用系统播放器。
+- 内置播放器基于 libmpv，**自带解码器**，不依赖系统解码器（Windows Media Foundation），因此不受系统组件缺失或损坏影响；但极冷门的编码/封装仍可能无法播放，可改用系统播放器。
 - 暂停是「中断当前集」而非分片续传；重新继续会从这一集重新下载。
 - 未做自动更新、托盘常驻、任务定时。
 
