@@ -28,7 +28,11 @@ def sanitize_filename(name: str, *, fallback: str = "未命名", max_len: int = 
     return text[:max_len].strip() or fallback
 
 
-def episode_filename(number: int, ext: str = ".mp4") -> str:
+def episode_filename(number: int, ext: str = ".mp4", label: str = "") -> str:
+    """分段剧（第1-20集）用真实标题命名，避免"第01集.mp4 里装着 20 集"。"""
+    caption = sanitize_filename(label, fallback="")
+    if caption and caption != f"第{int(number)}集":
+        return f"{caption}{ext}"
     return f"第{int(number):02d}集{ext}"
 
 

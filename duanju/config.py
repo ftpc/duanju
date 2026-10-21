@@ -35,6 +35,11 @@ def _probe_writable(directory: Path) -> bool:
         return False
 
 
+def probe_writable(directory: Path) -> bool:
+    """对外暴露的目录可写检测。"""
+    return _probe_writable(directory)
+
+
 def data_dir_candidates() -> list[Path]:
     """按优先级返回可用的数据目录候选。
 
@@ -111,6 +116,8 @@ class SourceConfig:
     kind: str = "maccms"
     enabled: bool = True
     cookie: str = ""
+    # 是否允许该站源在线播放（默认允许）。原先按站名硬编码拦截，改为配置项开关。
+    allow_online: bool = True
 
     def to_dict(self) -> dict:
         return {
@@ -120,6 +127,7 @@ class SourceConfig:
             "kind": self.kind,
             "enabled": bool(self.enabled),
             "cookie": self.cookie,
+            "allow_online": bool(self.allow_online),
         }
 
     @classmethod
@@ -134,6 +142,7 @@ class SourceConfig:
             kind=str(data.get("kind") or "maccms"),
             enabled=bool(data.get("enabled", True)),
             cookie=str(data.get("cookie") or ""),
+            allow_online=bool(data.get("allow_online", True)),
         )
 
 
@@ -174,6 +183,10 @@ class Config:
 
     def download_path(self) -> Path:
         return Path(self.download_dir)
+
+    def image_cache_path(self) -> Path:
+        """图片缓存目录：固定为数据目录下的 cache\\images，与日志同树，不再可配置。"""
+        return self.data_dir / "cache" / "images"
 
     # ---------- 读写 ----------
     @classmethod
@@ -279,6 +292,10 @@ class Config:
         ensure_dir(self.download_path())
         ensure_dir(self.data_dir)
         ensure_dir(self.log_dir)
+        try:
+            ensure_dir(self.image_cache_path())
+        except OSError:
+            pass
 
     # ---------- 站源 ----------
     def source_by_key(self, key: str) -> SourceConfig | None:

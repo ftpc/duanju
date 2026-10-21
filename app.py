@@ -12,6 +12,7 @@
 from __future__ import annotations
 
 import argparse
+import datetime
 import logging
 import os
 import sys
@@ -221,18 +222,24 @@ def _diagnose() -> int:
     return code
 
 
-def main(argv: list[str] | None = None) -> int:
-    # 任务1：暴力验证日志能否写入
-    import os as _os
-    _log_dir = r"C:\DuanjuLogs"
+def _write_startup_snapshot(log_dir: Path) -> None:
+    """把启动快照写到指定日志目录；任何异常都不得影响启动。"""
     try:
-        _os.makedirs(_log_dir, exist_ok=True)
-        with open(_os.path.join(_log_dir, "startup.txt"), "w", encoding="utf-8") as _f:
-            _f.write(f"程序启动 {__import__('datetime').datetime.now()}\n")
-            _f.write(f"Python: {sys.version}\n")
-            _f.write(f"PySide6: {__import__('PySide6').__version__}\n")
-    except Exception as _e:
-        pass  # 即使写日志失败也不影响启动
+        log_dir.mkdir(parents=True, exist_ok=True)
+        with open(log_dir / "startup.txt", "w", encoding="utf-8") as handle:
+            handle.write(f"程序启动 {datetime.datetime.now()}\n")
+            handle.write(f"Python: {sys.version}\n")
+            handle.write(f"PySide6: {__import__('PySide6').__version__}\n")
+    except Exception:  # noqa: BLE001 - 写快照失败不阻塞启动
+        pass
+
+
+def main(argv: list[str] | None = None) -> int:
+    # 启动早期先写一份快照（此时 config 尚未加载，先落到默认数据目录的 logs 下），
+    # config 加载成功后会再写一次到真实日志目录，二者同为数据目录下的 logs。
+    from duanju.config import appdata_dir
+
+    _write_startup_snapshot(appdata_dir() / "logs")
 
     args = _parse_args(argv)
     if args.version:
@@ -281,10 +288,18 @@ def main(argv: list[str] | None = None) -> int:
         QMessageBox.critical(None, "启动失败", _bootstrap_help(f"文件系统错误：{exc}"))
         return 1
     config.ensure_dirs()
+    # 数据目录确定后，把启动快照补写到真实日志目录（<数据目录>\logs）
+    _write_startup_snapshot(config.log_dir)
 
     bridge = Bridge()
     setup_logging(config, bridge.log_message.emit)
     app.setStyleSheet(stylesheet(config.theme))
+
+    # 图片缓存目录固定为 <数据目录>\cache\images（与日志同树，不再可配置）
+    from ui.image_loader import set_cache_dir
+
+    if not set_cache_dir(config.image_cache_path()):
+        logger.warning("图片缓存目录不可用，已停用磁盘缓存：%s", config.image_cache_path())
 
     def exception_hook(exc_type, exc_value, exc_tb) -> None:  # noqa: ANN001
         logger.critical("未捕获异常", exc_info=(exc_type, exc_value, exc_tb))

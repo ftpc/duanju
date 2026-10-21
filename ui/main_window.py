@@ -6,7 +6,6 @@ import logging
 from pathlib import Path
 
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QAction
 from PySide6.QtWidgets import (
     QApplication,
     QDockWidget,
@@ -45,7 +44,6 @@ class MainWindow(QMainWindow):
         self._demo = False
         self._build()
 
-    # ---------- UI ----------
     def _build(self) -> None:
         self.setWindowTitle(f"{APP_TITLE} v{VERSION}")
         self.resize(1280, 840)
@@ -88,18 +86,15 @@ class MainWindow(QMainWindow):
             self.stack.addWidget(page)
 
         self._build_log_dock()
-        self._build_menu()
         self._build_status_bar()
 
         self.nav.currentRowChanged.connect(self._switch_page)
         self.search_page.view_downloads.connect(lambda: self.nav.setCurrentRow(1))
         
-        # 🎯 核心：连接本地播放和在线播放的信号
         self.downloads_page.play_file.connect(lambda p: self._play_playlist([(Path(p).name, p)], 0))
         self.library_page.play_playlist.connect(self._play_playlist)
         
         self.settings_page.settings_changed.connect(self._on_settings_changed)
-        self.search_page.challenge_result_received.connect(self._on_challenge_result)
         self.bridge.log_message.connect(self.log_panel.append_line)
         self.bridge.jobs_changed.connect(self._update_stats)
 
@@ -116,37 +111,16 @@ class MainWindow(QMainWindow):
         self.addDockWidget(Qt.BottomDockWidgetArea, dock)
         self.log_dock = dock
         self.resizeDocks([dock], [200], Qt.Vertical)
-        dock.hide() # 🎯 启动时隐藏日志
+        dock.hide() 
 
-    def _build_menu(self) -> None:
-        menu = self.menuBar()
-        file_menu = menu.addMenu("文件")
-        open_dir = QAction("打开下载目录", self)
-        open_dir.triggered.connect(self._open_download_dir)
-        file_menu.addAction(open_dir)
-        file_menu.addSeparator()
-        quit_action = QAction("退出", self)
-        quit_action.setShortcut("Ctrl+Q")
-        quit_action.triggered.connect(self.close)
-        file_menu.addAction(quit_action)
-
-        view_menu = menu.addMenu("视图")
-        self.log_action = self.log_dock.toggleViewAction()
-        self.log_action.setText("运行日志")
-        self.log_action.setShortcut("Ctrl+L")
-        view_menu.addAction(self.log_action)
-
-        help_menu = menu.addMenu("帮助")
-        about_action = QAction("关于", self)
-        about_action.triggered.connect(self._about)
-        help_menu.addAction(about_action)
+    # 顶部菜单栏已移除（文件/视图/帮助），相关功能改由侧边导航与设置页承担；
+    # 如需恢复，请在此处重新实现菜单构建并在 _build 中调用，否则 QMainWindow 不创建 menuBar。
 
     def _build_status_bar(self) -> None:
         self.statusBar().showMessage("就绪")
         self.stats_label = QLabel("")
         self.statusBar().addPermanentWidget(self.stats_label)
 
-    # ---------- 行为 ----------
     def switch_page(self, index: int) -> None:
         self.nav.setCurrentRow(index)
 
@@ -163,11 +137,9 @@ class MainWindow(QMainWindow):
             self.settings_page.reload()
 
     def _play_playlist(self, playlist: list[tuple[str, str]], start_index: int = 0) -> None:
-        """统一处理播放列表（包括本地连播和在线连播）。"""
         if not playlist:
             return
         
-        # 验证起始文件是否存在
         source = Path(playlist[start_index][1])
         if not source.is_file() and not playlist[start_index][1].startswith("http"):
             QMessageBox.warning(self, "播放", f"文件不存在：{source}")
@@ -210,29 +182,6 @@ class MainWindow(QMainWindow):
             app.setStyleSheet(stylesheet(self.config.theme))
         self.search_page.refresh_sources()
 
-    def _on_challenge_result(self, cookies: list[dict], user_agent: str) -> None:
-        query = self.search_page.query_edit.text().strip()
-        source_key = self.search_page.source_combo.currentData()
-        if not query or not source_key:
-            return
-
-        def do_retry() -> None:
-            try:
-                result = self.service.retry_search_with_challenge(query, cookies, user_agent)
-                self.search_page._challenge_pending = False
-                self.search_page._on_search_ok(result)
-            except Exception as exc:
-                self.search_page._challenge_pending = False
-                from PySide6.QtCore import QTimer
-                error_msg = f"{exc}"
-                if "人机验证" in error_msg or "Cloudflare" in error_msg:
-                    error_msg += "\n\n可能原因：\n1. UA 与浏览器不一致\n2. Cookie 已过期\n3. IP 被限制"
-                QTimer.singleShot(0, lambda: QMessageBox.critical(
-                    self, "验证失败", f"重试失败：{error_msg}\n\n请确保 UA 与浏览器一致，或稍后重试。"
-                ))
-
-        self.bridge.run(do_retry)
-
     def _about(self) -> None:
         QMessageBox.about(
             self,
@@ -243,6 +192,13 @@ class MainWindow(QMainWindow):
         )
 
     def closeEvent(self, event) -> None:
+        # 🎯 核心修复：主窗体退出时，强行关闭所有独立的播放器窗口
+        for p in list(self._players):
+            try:
+                p.close()
+            except Exception:
+                pass
+                
         try:
             active = self.service.active_jobs()
         except Exception:

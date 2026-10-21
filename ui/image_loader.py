@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import os
 from concurrent.futures import ThreadPoolExecutor, Future
 from pathlib import Path
 from typing import Any
@@ -22,14 +23,46 @@ from PySide6.QtGui import QPixmap
 
 logger = logging.getLogger(__name__)
 
-# 图片缓存目录
-_CACHE_DIR = Path(r"C:\DuanjuLogs\cache\images")
-try:
-    _CACHE_DIR.mkdir(parents=True, exist_ok=True)
-    logger.info("图片缓存目录已创建: %s", _CACHE_DIR)
-except OSError as exc:
-    logger.error("无法创建缓存目录 %s: %s", _CACHE_DIR, exc)
-    _CACHE_DIR = None
+# 图片缓存目录：固定为 <数据目录>\cache\images，不再支持配置
+_CACHE_DIR: Path | None = None
+
+
+def _default_cache_dir() -> Path:
+    """固定缓存目录：%APPDATA%\\DuanjuDownloader\\cache\\images（与日志同树）。"""
+    from duanju.config import appdata_dir
+
+    return appdata_dir() / "cache" / "images"
+
+
+def set_cache_dir(path: "Path | str | None") -> bool:
+    """设置图片缓存目录；目录不存在会尝试创建，并验证可写。返回是否可用。"""
+    global _CACHE_DIR
+    if path is None:
+        _CACHE_DIR = None
+        logger.warning("图片缓存目录被禁用")
+        return False
+    target = Path(path)
+    try:
+        target.mkdir(parents=True, exist_ok=True)
+        probe = target / f".write-test-{os.getpid()}"
+        probe.write_text("ok", encoding="utf-8")
+        probe.unlink(missing_ok=True)
+    except OSError as exc:
+        logger.error("图片缓存目录不可用 %s: %s", target, exc)
+        return False
+    _CACHE_DIR = target
+    logger.info("图片缓存目录已设为: %s", target)
+    return True
+
+
+def get_cache_dir() -> Path | None:
+    """当前生效的图片缓存目录。"""
+    return _CACHE_DIR
+
+
+# 首次导入时按固定规则初始化，保证任何入口都指向同一目录；app 启动时会用
+# config.image_cache_path() 再设一次（同一路径）
+set_cache_dir(_default_cache_dir())
 
 # 默认请求头（绕过 CDN 防盗链）
 _DEFAULT_HEADERS = {
@@ -55,15 +88,22 @@ class ImageLoader(QObject):
         self._in_flight: set[str] = set()  # 正在下载的 URL 集合
         self._executor = ThreadPoolExecutor(max_workers=_MAX_WORKERS)
         self._futures: dict[str, Future] = {}  # url -> Future
+        self._cache_dir_snapshot: Path | None = get_cache_dir()
         logger.info("ImageLoader 初始化完成，线程池大小: %d", _MAX_WORKERS)
 
     def _get_cache_path(self, url: str) -> Path | None:
-        """根据 URL 生成缓存文件路径。"""
-        if _CACHE_DIR is None:
+        """根据 URL 生成缓存文件路径（目录改了会自动切到新目录）。"""
+        cache_dir = get_cache_dir()
+        if cache_dir is None:
             return None
+        if getattr(self, "_cache_dir_snapshot", None) != cache_dir:
+            # 切换了缓存目录：旧目录下的内存映射全部作废，避免命中不算数的旧路径
+            self._cache_dir_snapshot = cache_dir
+            self._cache.clear()
+            logger.info("图片缓存目录变更，已清空内存缓存: %s", cache_dir)
         url_hash = hashlib.md5(url.encode()).hexdigest()
         ext = ".jpg" if "jpg" in url.lower() or "jpeg" in url.lower() else ".png"
-        return _CACHE_DIR / f"{url_hash}{ext}"
+        return cache_dir / f"{url_hash}{ext}"
 
     def get_cache_path(self, url: str) -> Path | None:
         """获取缓存路径（供外部调用）。"""

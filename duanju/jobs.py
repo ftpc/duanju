@@ -200,7 +200,9 @@ class JobManager:
                 if cancel.is_set():
                     raise CancelledError("任务已暂停")
                 out_dir = ensure_dir(self.config.download_path() / sanitize_filename(drama.title))
-                target = out_dir / episode_filename(job.episode)
+                target = out_dir / episode_filename(
+                    job.episode, label=self._segment_label(drama, job.episode)
+                )
                 self.db.update_job(job_id, file=str(target))
                 self.ffmpeg.download(
                     plan,
@@ -274,6 +276,18 @@ class JobManager:
         self._dispatch()
 
     # ---------- 工具 ----------
+    def _segment_label(self, drama: Drama, episode: int) -> str:
+        """取站源接口里的分段标题（如"第1-20集"）；普通剧集返回空串。"""
+        try:
+            source = self.registry.get(drama.source_key)
+            cache = getattr(source, "_api_cache", None) or {}
+            rows = cache.get(str(drama.drama_id), (None, []))[1]
+            if rows and 1 <= int(episode) <= len(rows):
+                return str(rows[int(episode) - 1][0] or "")
+        except Exception:  # noqa: BLE001
+            logger.debug("读取分段标题失败：%s #%s", drama.title, episode)
+        return ""
+
     def _resolve(self, drama: Drama, episode: int):
         source = self.registry.get(drama.source_key)
         if source is None:

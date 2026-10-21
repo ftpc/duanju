@@ -10,11 +10,12 @@ from pathlib import Path
 from .config import Config, SourceConfig
 from .db import Database
 from .download import FFmpeg
-from .errors import AppError, ParseError
+from .errors import AppError, BlockedError, ParseError
 from .jobs import JobManager
 from .merge import merge_episodes
 from .models import Drama, Episode
 from .net import HttpClient
+from .search_state import STATE_BLOCKED, STATE_EMPTY, STATE_ERROR, STATE_OK
 from .sources import SourceRegistry, probe_site
 from .util import ensure_dir, sanitize_filename
 
@@ -100,11 +101,54 @@ class Service:
     def sources(self) -> list[tuple[str, str]]:
         return self.registry.names()
 
-    def search(self, source_key: str, query: str) -> list[Drama]:
+    def search(self, source_key: str, query: str) -> tuple[list[Drama], str, str]:
+        """搜索剧集，统一返回三态 ``(dramas, state, reason)``。
+
+        * ``state == "ok"``：命中结果，``dramas`` 非空；
+        * ``state == "empty"``：站源正常但无匹配；
+        * ``state == "blocked"``：站源拦截（BlockedError，含 code）；
+        * ``state == "error"``：网络/解析等异常。
+
+        blocked / error 不抛异常，交由 UI 用统一文案呈现，不弹窗。
+        """
+        query = (query or "").strip()
+        if not query:
+            return [], STATE_EMPTY, "关键词为空"
+
+        source = self.registry.get(source_key)
+        if source is None:
+            logger.warning("搜索失败：站源不存在（key=%s）", source_key)
+            return [], STATE_ERROR, "站源不可用，请到设置里检查"
+
+        try:
+            dramas = source.search(self.client, query)
+        except BlockedError as exc:
+            logger.warning("搜索被站源拦截（source=%s, code=%s）：%s", source_key, exc.code, exc)
+            return [], STATE_BLOCKED, str(exc)
+        except AppError as exc:
+            logger.warning("搜索失败（source=%s）：%s", source_key, exc)
+            return [], STATE_ERROR, str(exc)
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("搜索出现未预期异常（source=%s）", source_key)
+            return [], STATE_ERROR, str(exc)
+
+        if not dramas:
+            return [], STATE_EMPTY, ""
+        return list(dramas), STATE_OK, ""
+
+    def get_homepage(self, source_key: str, page: int = 1) -> list[Drama]:
+        """获取指定站源的发现页列表（page=1 为首屏）。"""
         source = self.registry.get(source_key)
         if source is None:
             raise ParseError("站源不可用，请到设置里检查")
-        return source.search(self.client, query)
+        return source.get_homepage(self.client, page)
+
+    def get_catalog_page(self, source_key: str, page: int = 1) -> tuple[list[Drama], bool]:
+        """获取发现页指定页，返回 (剧集列表, 是否还有下一页)。"""
+        source = self.registry.get(source_key)
+        if source is None:
+            raise ParseError("站源不可用，请到设置里检查")
+        return source.catalog_page(self.client, page)
 
     def detail(self, drama: Drama) -> list[Episode]:
         source = self.registry.get(drama.source_key)
@@ -318,25 +362,6 @@ class Service:
 
     def probe_source(self, url: str) -> tuple[bool, str]:
         return probe_site(self.client, url)
-
-    def retry_search_with_challenge(self, query: str, cookies: list[dict], user_agent: str) -> list[Drama]:
-        from .errors import BlockedError, ParseError
-
-        try:
-            self.client.apply_challenge_result(cookies, user_agent)
-            result = self.search("duanju", query)
-            self.client.clear_challenge_result()
-            self._emit_log(f"验证通过，搜索《{query}》成功，找到 {len(result)} 部剧")
-            return result
-        except BlockedError as exc:
-            self.client.clear_challenge_result()
-            raise ParseError(f"验证未通过或已过期：{exc}") from exc
-        except ParseError:
-            raise
-        except Exception as exc:
-            self.client.clear_challenge_result()
-            logger.exception("验证重试搜索失败")
-            raise ParseError(f"搜索失败：{exc}") from exc
 
     def ffmpeg_status(self) -> str:
         if not self.ffmpeg.available:

@@ -15,6 +15,7 @@ from urllib3.util.retry import Retry
 
 from .config import Config
 from .errors import BlockedError, NetworkError, NotFoundError
+from .search_state import BLOCKED_HINT
 from .version import APP_NAME, VERSION
 
 logger = logging.getLogger(__name__)
@@ -155,9 +156,8 @@ class HttpClient:
         except requests.exceptions.RequestException as exc:
             raise NetworkError(f"网络请求失败：{exc}") from exc
         self._raise_for_status(response)
-        # 请求成功后清除 challenge 状态（避免后续请求一直使用旧验证）
-        if response.status_code < 400:
-            self.clear_challenge_result()
+        # 注意：验证结果（cf_clearance）必须保留，Cloudflare 站点后续每个请求都要带，
+        # 一旦请求成功就清除会导致第二次请求重新被质询。仅在用户重新验证或请求明确失败时清除。
         return response
 
     def apply_challenge_result(self, cookies: list[dict[str, str]], user_agent: str) -> None:
@@ -174,15 +174,26 @@ class HttpClient:
     def clear_challenge_result(self) -> None:
         """清除人机验证结果。
 
-        调用时机：请求成功一次后（验证已过期或不需要再保留），或用户手动修改设置中的 Cookie。
+        调用时机：用户手动修改设置中的 Cookie，或验证后重试仍然被质询（说明验证无效/已过期）。
+        注意：不要再在"请求成功"时调用，否则 cf_clearance 会被立刻丢弃。
         """
         with self._lock:
             self._override_cookie = ""
             self._override_user_agent = ""
         logger.debug("已清除 challenge 结果")
 
+    @property
+    def has_challenge_result(self) -> bool:
+        """当前是否已持有用户提供的人机验证结果。"""
+        return bool(self._override_cookie)
+
     @staticmethod
     def _raise_for_status(response: requests.Response) -> None:
+        """把 HTTP 错误码翻译成应用内异常。
+
+        保留人机验证识别能力，但只通过 ``BlockedError.code`` 暴露判别结果
+        （challenge / forbidden），供日志与三态判定使用，不再驱动 UI 弹框。
+        """
         status = response.status_code
         if status < 400:
             return
@@ -194,7 +205,13 @@ class HttpClient:
             mitigated = response.headers.get("cf-mitigated", "")
             if mitigated or "Just a moment" in body or "challenge-platform" in body:
                 raise BlockedError(
-                    "站点要求人机验证（Cloudflare），请在浏览器访问一次该站后重试，或改用其它站源"
+                    f"{BLOCKED_HINT}（站点启用了人机验证，code=challenge）",
+                    code="challenge",
+                )
+            if status == 403:
+                raise BlockedError(
+                    f"{BLOCKED_HINT}（站点返回 HTTP 403，code=forbidden）",
+                    code="forbidden",
                 )
         if status == 404:
             raise NotFoundError("页面不存在（可能已下架或 ID 有误）")

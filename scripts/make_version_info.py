@@ -18,7 +18,7 @@ from duanju.version import APP_NAME, VERSION  # noqa: E402
 
 
 def parse_version(version: str) -> tuple[int, int, int, int]:
-    """把 "0.2.0" 之类的版本号补齐成四段整数，非数字部分按 0 处理。"""
+    """把 "1.2.3" 之类的版本号补齐成四段整数，非数字部分按 0 处理。"""
     chunks = (version.split(".") + ["0", "0", "0", "0"])[:4]
     parts = []
     for chunk in chunks:

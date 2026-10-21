@@ -1,5 +1,7 @@
 # 下载器 · Windows 桌面版
 
+当前版本：**0.1.0**（唯一版本来源：`duanju/version.py` 的 `VERSION`）
+
 基于 PySide6 的 Windows 桌面应用：
 **搜索 → 选集 → 批量下载 → 断点恢复 → 整部合并 → 内置播放**，全部在本机完成。
 
@@ -7,7 +9,10 @@
 > 批量抓取可能违反平台服务条款，请控制频率、自行承担风险。
 
 ![主界面](assets/screenshots/00-main.png)
+![搜索](assets/screenshots/01-search.png)
 ![下载队列](assets/screenshots/02-downloads.png)
+![剧库](assets/screenshots/03-library.png)
+![设置](assets/screenshots/04-settings.png)
 
 ## 功能
 
@@ -108,8 +113,7 @@ git push origin vx.y.z
 
 | 标签 | 内容 |
 | --- | --- |
-| `v0.1.0` | 最早的干净源码（QtMultimedia 播放器）；此前被误标为 v0.2.0，现回退重新编号 |
-| `v0.2.0` | 播放引擎换为 libmpv，补齐 `mpv-2.dll` 依赖文档，并完成版本号工程化 |
+| `v0.1.0` | 当前版本：libmpv 播放引擎、下载管线与界面重构、版本号工程化（仓库唯一版本线） |
 
 ## 使用流程
 

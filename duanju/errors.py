@@ -26,10 +26,15 @@ class NetworkError(AppError):
 
 
 class BlockedError(AppError):
-    """被 WAF / Cloudflare 人机验证拦截。"""
+    """被 WAF / 人机验证拦截。
 
-    def __init__(self, message: str):
+    ``code`` 仅用于日志与上层状态判定（challenge=人机验证质询，
+    forbidden=普通 403 拒绝），不再驱动任何 UI 弹窗。
+    """
+
+    def __init__(self, message: str, *, code: str = "challenge"):
         super().__init__(message, category="blocked", retryable=False)
+        self.code = code
 
 
 class NotFoundError(AppError):

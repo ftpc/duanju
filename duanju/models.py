@@ -53,6 +53,10 @@ class Episode:
     title: str = ""
     page_url: str = ""
     sid: int = 1
+    # 站源接口（苹果CMS 的 /api.php/provide/vod/）直给的媒体地址。
+    # 多条剧集被站点打包成一段时（如"第1-20集"），这里存该段的 m3u8 直链，
+    # resolve 时可直接使用，不必再去解析播放页。
+    direct_url: str = ""
 
     def label(self) -> str:
         return self.title or f"第{self.number}集"

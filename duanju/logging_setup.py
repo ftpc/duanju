@@ -11,10 +11,8 @@ from pathlib import Path
 
 from .config import Config
 
-# 强制使用绝对路径，避免打包后权限问题
-_LOG_DIR = Path(r"C:\DuanjuLogs")
-
-
+# 日志目录不再单独硬编码：统一由 config.log_dir 决定（= 数据目录\logs，
+# 与 config.json、app.db、cache\images 同树），保证日志与图片缓存集中在一处。
 _FORMAT = "%(asctime)s %(levelname)-7s %(name)s: %(message)s"
 _DATEFMT = "%H:%M:%S"
 
@@ -44,14 +42,15 @@ def setup_logging(config: Config, callback: Callable[[str], None] | None = None)
     console.setFormatter(logging.Formatter(_FORMAT, _DATEFMT))
     root.addHandler(console)
 
-    # 强制创建日志目录（绝对路径）
+    # 日志目录由配置决定：<数据目录>\logs
+    log_dir = config.log_dir
     try:
-        _LOG_DIR.mkdir(parents=True, exist_ok=True)
+        log_dir.mkdir(parents=True, exist_ok=True)
     except OSError as exc:
-        print(f"无法创建日志目录 {_LOG_DIR}: {exc}", file=sys.stderr)
+        print(f"无法创建日志目录 {log_dir}: {exc}", file=sys.stderr)
 
     # 使用绝对路径的 FileHandler（覆盖模式）
-    log_file = _LOG_DIR / "app.log"
+    log_file = log_dir / "app.log"
     try:
         file_handler = logging.FileHandler(
             str(log_file),
@@ -76,4 +75,4 @@ def setup_logging(config: Config, callback: Callable[[str], None] | None = None)
     logging.getLogger("requests").setLevel(logging.WARNING)
     logging.getLogger("yt_dlp").setLevel(logging.WARNING)
 
-    return _LOG_DIR
+    return log_dir

@@ -42,6 +42,29 @@ class ConfigTests(unittest.TestCase):
         candidates = data_dir_candidates()
         self.assertGreaterEqual(len(candidates), 2)
 
+    def test_image_cache_path_is_fixed_under_data_dir(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            config = Config.load(Path(temp) / "config.json")
+            self.assertEqual(config.image_cache_path(), config.data_dir / "cache" / "images")
+
+    def test_image_cache_dir_is_not_configurable(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp) / "config.json"
+            # 旧版本写入的 image_cache_dir 应被忽略，且不再回写
+            path.write_text('{"image_cache_dir": "D:/elsewhere"}', encoding="utf-8")
+            config = Config.load(path)
+            self.assertFalse(hasattr(config, "image_cache_dir"))
+            self.assertEqual(config.image_cache_path(), config.data_dir / "cache" / "images")
+            config.save()
+            self.assertNotIn("image_cache_dir", path.read_text(encoding="utf-8"))
+
+    def test_ensure_dirs_creates_image_cache_dir(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            config = Config.load(Path(temp) / "config.json")
+            config.ensure_dirs()
+            self.assertTrue(config.image_cache_path().is_dir())
+            self.assertTrue(config.log_dir.is_dir())
+
 
 class WinEnvTests(unittest.TestCase):
     def test_integrity_level_string(self) -> None:

@@ -203,9 +203,15 @@ class EpisodeGrid(QWidget):
         self._buttons.clear()
         self.selection_changed.emit(0)
 
-    def set_episodes(self, numbers: list[int], completed: set[int] | None = None) -> None:
+    def set_episodes(
+        self,
+        numbers: list[int],
+        completed: set[int] | None = None,
+        labels: dict[int, str] | None = None,
+    ) -> None:
         self.clear()
         completed = completed or set()
+        labels = labels or {}
         for position, number in enumerate(numbers):
             button = QPushButton(str(number))
             button.setObjectName("EpisodeButton")
@@ -213,13 +219,15 @@ class EpisodeGrid(QWidget):
             button.setMinimumHeight(34)
             button.setCursor(Qt.PointingHandCursor)
             button.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+            # 分段剧（第1-20集等）的标题与集号对不上时，用标题作为提示更准确
+            caption = (labels.get(number) or "").strip() or f"第{number}集"
             if number in completed:
                 button.setProperty("completed", True)
-                button.setToolTip("已下载")
+                button.setToolTip(f"已下载 · {caption}")
                 button.setText(f"√{number}")
             else:
                 button.setProperty("completed", False)
-                button.setToolTip(f"第{number}集")
+                button.setToolTip(caption)
             button.toggled.connect(lambda _checked: self._notify())
             self._layout.addWidget(button, position // self.COLUMNS, position % self.COLUMNS)
             self._buttons[number] = button
