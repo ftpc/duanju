@@ -1,6 +1,4 @@
-# 下载器 · Windows 桌面版
-
-当前版本：**0.1.0**（唯一版本来源：`duanju/version.py` 的 `VERSION`）
+# 短剧下载器 · Windows 桌面版
 
 基于 PySide6 的 Windows 桌面应用：
 **搜索 → 选集 → 批量下载 → 断点恢复 → 整部合并 → 内置播放**，全部在本机完成。
