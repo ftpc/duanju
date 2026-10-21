@@ -6,10 +6,6 @@
 > ⚠️ **仅供个人学习分镜、离线研究使用。** 下载内容版权归原作者/平台所有，请勿传播、二创搬运或商用。
 > 批量抓取可能违反平台服务条款，请控制频率、自行承担风险。
 
-![主界面](assets/screenshots/00-main.png)
-![搜索](assets/screenshots/01-search.png)
-![下载队列](assets/screenshots/02-downloads.png)
-![剧库](assets/screenshots/03-library.png)
 
 ## 功能
 
