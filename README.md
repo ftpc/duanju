@@ -10,7 +10,6 @@
 ![搜索](assets/screenshots/01-search.png)
 ![下载队列](assets/screenshots/02-downloads.png)
 ![剧库](assets/screenshots/03-library.png)
-![设置](assets/screenshots/04-settings.png)
 
 ## 功能
 
