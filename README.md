@@ -214,13 +214,6 @@ duanju-gui/
 
 ## 常见问题
 
-**启动报 `[WinError 5] 拒绝访问 ...AppData\\Roaming\\DuanjuDownloader`**
-：exe 被以 **Low Integrity（低完整性）** 启动，典型原因是把程序放在**沙箱/受控目录**里运行
-（例如本项目的交付工作区 `D:\tear\harness`）。
-请把整个文件夹解压/复制到**桌面或普通目录**（如 `C:\Users\<你>\Desktop`、`D:\Tools`）后再运行。
-新版程序会自动回退到 `LocalLow` 或临时目录并弹窗说明；也可用
-`DuanjuDownloader.exe --diagnose` 查看完整性级别与数据目录。
-
 **搜索返回 403 / 人机验证**
 ：站点对机房 IP 或高频请求敏感。换网络、降低频率，或直接在浏览器搜索后拿 id；本项目已优先使用不受搜索页 WAF 影响的 JSON 接口。
 
